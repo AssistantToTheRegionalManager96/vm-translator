@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using VMTranslator.Models;
 
-namespace VMTranslator
+namespace VMTranslator.Services
 {
     public class Translator
     {
@@ -22,19 +22,56 @@ namespace VMTranslator
             { "pointer", new MemorySegment { Symbol = "",  MaxIndex = 1 } },
         };
 
-        private int _comparisonLabelCounter;
-        private HashSet<string> _labels = new HashSet<string>();
-        private string _filePath;
-        private string _fileName;
-        private string _currentFuction = String.Empty;
+        private VMFile _currentFile { get; set; }
+        private string _currentFunctionName = string.Empty;
         private int _functionCallRunningCount = 0;
+        private int _branchingLabelRunningCount = 0;
+        private HashSet<string> _declaredLabels = new HashSet<string>();
 
-        public Translator(string filePath)
+        //private int _comparisonLabelCounter = 0;
+        //private HashSet<string> _labels = new HashSet<string>();
+        //private string _currentFuction = string.Empty;
+        //private int _functionCallRunningCount = 0;
+
+        public IList<string> TranslateVMFile(VMFile vmFile)
         {
-            _comparisonLabelCounter = 0;
-            _filePath = filePath;
-            _fileName = Path.GetFileNameWithoutExtension(_filePath);
+            var output = new List<string>();
+
+            foreach (var command in vmFile.ParsedCommands)
+            {
+
+            }
         }
+
+        public IList<string> HandlePushCommand(string segment, int index, bool byValue)
+        {
+            var memorySegment = _memorySegmentLookup[segment];
+            if (memorySegment == null) throw new Exception("Invalid memory segment");
+
+            if (index < 0 || index > memorySegment.MaxIndex) throw new Exception("Requested index out of bounds of memory segment");
+
+
+
+        }
+
+        private IList<string> DereferenceSegment(string segment, int index)
+        {
+
+        }
+
+        private IList<string> DereferenceLabel(string label)
+        {
+
+        }
+
+
+
+
+
+
+
+
+
 
         public void TranslateLines(IList<ParsedCommand> commands)
         {
@@ -63,7 +100,7 @@ namespace VMTranslator
 
         private IList<string> ConstructComparisonCommand(string jumpCondition)
         {
-            var command =  new List<string>
+            var command = new List<string>
             {
                 "@SP",
                 "A=M-1",
@@ -182,7 +219,7 @@ namespace VMTranslator
             var memorySegment = _memorySegmentLookup[segment];
             if (memorySegment == null) throw new Exception("Invalid memory segment");
 
-            if (index < 0 || ((segment == "static" || segment == "temp" || segment == "constant" || segment == "pointer") && index > memorySegment.MaxIndex))
+            if (index < 0 || (segment == "static" || segment == "temp" || segment == "constant" || segment == "pointer") && index > memorySegment.MaxIndex)
             {
                 throw new Exception("Requested index out of bounds of memory segment");
             }
@@ -198,7 +235,7 @@ namespace VMTranslator
                     "A=M",
                     "M=D",
                     "@SP",
-                    "M=M+1"
+                    "M=M+1",
                 };
             }
             else if (segment == "temp")
@@ -271,7 +308,7 @@ namespace VMTranslator
             var memorySegment = _memorySegmentLookup[segment];
 
 
-            if (index < 0 || ((segment == "static" || segment == "temp" || segment == "constant" || segment == "pointer") && index > memorySegment.MaxIndex))
+            if (index < 0 || (segment == "static" || segment == "temp" || segment == "constant" || segment == "pointer") && index > memorySegment.MaxIndex)
             {
                 throw new Exception("Requested index out of bounds of memory segment");
             }
@@ -358,9 +395,9 @@ namespace VMTranslator
 
         private string HandleLabelCommand(string label)
         {
-            string labelAugmented = String.Empty;
+            string labelAugmented = string.Empty;
 
-            if (_currentFuction.Trim() == String.Empty || _currentFuction == null)
+            if (_currentFuction.Trim() == string.Empty || _currentFuction == null)
             {
                 labelAugmented = $"{_fileName.ToUpper()}.{_currentFuction}${label}";
             }
@@ -375,9 +412,9 @@ namespace VMTranslator
 
         private IList<string> HandleBranchingCommand(CommandType commandType, string label)
         {
-            string labelAugmented = String.Empty;
+            string labelAugmented = string.Empty;
 
-            if (_currentFuction.Trim() == String.Empty || _currentFuction == null)
+            if (_currentFuction.Trim() == string.Empty || _currentFuction == null)
             {
                 labelAugmented = $"{_fileName.ToUpper()}.{_currentFuction}${label}";
             }
@@ -388,10 +425,10 @@ namespace VMTranslator
 
             if (commandType == CommandType.C_GOTO)
             {
-                return new List<string> 
+                return new List<string>
                 {
-                    $"@{labelAugmented}", 
-                    "0;JMP" 
+                    $"@{labelAugmented}",
+                    "0;JMP"
                 };
             }
             else if (commandType == CommandType.C_IF_GOTO)
@@ -410,19 +447,19 @@ namespace VMTranslator
 
         }
 
-        private IList<string> HandleFunctionCommand(string functionName, int nVar) 
+        private IList<string> HandleFunctionCommand(string functionName, int nVar)
         {
             _functionCallRunningCount = 0;
-            var outputLines = new List<string>();   
+            var outputLines = new List<string>();
             _currentFuction = functionName;
 
             // Construct function label
             outputLines.Add($"({_fileName.ToUpper()}.{functionName})");
 
             // Initialise local variables
-            for (int i = 0; i < nVar; i++) 
+            for (int i = 0; i < nVar; i++)
             {
-                outputLines.AddRange(new List<String>
+                outputLines.AddRange(new List<string>
                 {
                     "@SP",
                     "A=M",
@@ -534,7 +571,7 @@ namespace VMTranslator
 
         private IList<string> HandleReturnCommand()
         {
-            _currentFuction = String.Empty;
+            _currentFuction = string.Empty;
             var outputLines = new List<string>();
 
             // declare endFrame temp var and set to LCL
@@ -603,8 +640,8 @@ namespace VMTranslator
                 "D=D-A",
                 "@ARG",
                 "M=D"
-            });            
-            
+            });
+
             // set LCL to *(endFrame - 4)
             outputLines.AddRange(new List<string>
             {

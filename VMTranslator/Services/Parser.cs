@@ -9,13 +9,6 @@ namespace VMTranslator.Services
 {
     public class Parser
     {
-        private readonly string _filePath;
-
-        public Parser(string filePath)
-        {
-            _filePath = filePath;
-        }
-
         private Dictionary<string, CommandType> _commandLookup = new Dictionary<string, CommandType>
         {
             { "add", CommandType.C_ARITHMETIC },
@@ -37,10 +30,27 @@ namespace VMTranslator.Services
             { "return", CommandType.C_RETURN }
         };
 
-        public IList<ParsedCommand> ParseFile()
+        public IList<VMFile> ParseDirectory(string path)
+        {
+            var vmFiles = new List<VMFile>();
+            var files = Directory.GetFiles(path, "*.vm");
+
+            foreach (var file in files)
+            {
+                vmFiles.Add(new VMFile
+                {
+                    FileName = Path.GetFileNameWithoutExtension(file),
+                    ParsedCommands = ParseFile(file)
+                });
+            }
+
+            return vmFiles;
+        }
+
+        public IList<ParsedCommand> ParseFile(string filePath)
         {
             IList<string> lines = new List<string>();
-            using (StreamReader sr = new StreamReader(_filePath))
+            using (StreamReader sr = new StreamReader(filePath))
             {
                 while (!sr.EndOfStream)
                 {
@@ -68,14 +78,6 @@ namespace VMTranslator.Services
                 else indexPart = -1;
 
                 if (!_commandLookup.TryGetValue(commandPart, out var commandType)) throw new Exception("Unidentified command");
-
-                //var newCommand = commandType switch
-                //{
-                //    CommandType.C_ARITHMETIC => new ParsedCommand { CommandType = commandType, Arg1 = commandPart, Arg2 = indexPart },
-                //    CommandType.C_POP or CommandType.C_PUSH => new ParsedCommand { CommandType = commandType, Arg1 = segmentPart, Arg2 = indexPart },
-                //    CommandType.C_LABEL => new ParsedCommand { CommandType = commandType, Arg1 = segmentPart, Arg2 = indexPart },
-                //    CommandType.C_GOTO => new ParsedCommand { CommandType = commandType, Arg1 = }
-                //};
 
                 parsedCommands.Add(new ParsedCommand
                 {
