@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using VMTranslator.Models;
@@ -28,384 +29,150 @@ namespace VMTranslator.Services
         private int _branchingLabelRunningCount = 0;
         private HashSet<string> _declaredLabels = new HashSet<string>();
 
-        //private int _comparisonLabelCounter = 0;
-        //private HashSet<string> _labels = new HashSet<string>();
-        //private string _currentFuction = string.Empty;
-        //private int _functionCallRunningCount = 0;
-
         public IList<string> TranslateVMFile(VMFile vmFile)
         {
+            _currentFile = vmFile;
             var output = new List<string>();
 
             foreach (var command in vmFile.ParsedCommands)
             {
+                var lines = command.CommandType switch
+                {
+                    CommandType.C_PUSH => HandlePushCommand(command.Arg1, command.Arg2),
+                    CommandType.C_POP => HandlePopCommand(command.Arg1, command.Arg2),
+                    CommandType.C_ARITHMETIC => HandleStackArithmetic(command.Arg1)
+                };
 
+                output.AddRange(lines);
             }
+
+            return output;
         }
 
-        public IList<string> HandlePushCommand(string segment, int index, bool byValue)
+        public IList<string> HandlePushCommand(string segment, int index)
         {
             var memorySegment = _memorySegmentLookup[segment];
             if (memorySegment == null) throw new Exception("Invalid memory segment");
 
             if (index < 0 || index > memorySegment.MaxIndex) throw new Exception("Requested index out of bounds of memory segment");
 
-
-
-        }
-
-        private IList<string> DereferenceSegment(string segment, int index)
-        {
-
-        }
-
-        private IList<string> DereferenceLabel(string label)
-        {
-
-        }
-
-
-
-
-
-
-
-
-
-
-        public void TranslateLines(IList<ParsedCommand> commands)
-        {
-            List<string> output = new List<string>();
-
-            foreach (var command in commands)
+            var fetchValueLines = segment switch
             {
-                switch (command.CommandType)
-                {
-                    case CommandType.C_ARITHMETIC:
-                        output.AddRange(HandleArithmeticCommand(command.Arg1));
-                        break;
-                    case CommandType.C_PUSH:
-                        output.AddRange(HandlePushCommand(command.Arg1, command.Arg2));
-                        break;
-                    case CommandType.C_POP:
-                        output.AddRange(HandlePopCommand(command.Arg1, command.Arg2));
-                        break;
-                    default:
-                        break;
-                }
-            }
+                "static" => FetchValue($"{_currentFile.FileName}.{index}", dereference: true),
+                "temp" => FetchValue(memorySegment.Symbol, index),
+                "constant" => FetchConstant(index),
+                "pointer" => FetchValue(index == 0 ? "THIS" : "THAT"),
+                _ => FetchValue(memorySegment.Symbol, index, true),
+            };;
 
-            File.WriteAllLines(_filePath, output.ToArray());
-        }
-
-        private IList<string> ConstructComparisonCommand(string jumpCondition)
-        {
-            var command = new List<string>
-            {
-                "@SP",
-                "A=M-1",
-                "D=M",
-                "A=A-1",
-                "D=M-D",
-                $"@{_fileName}.IF_SKIP_{_comparisonLabelCounter}",
-                $"D;{jumpCondition}",
-
-                "@SP",
-                "A=M-1",
-                "A=A-1",
-                "M=0",
-                $"@{_fileName}.IF_END_{_comparisonLabelCounter}",
-                "0;JMP",
-
-                $"({_fileName}.IF_SKIP_{_comparisonLabelCounter})",
-                "@SP",
-                "A=M-1",
-                "A=A-1",
-                "M=-1",
-                $"@{_fileName}.IF_END_{_comparisonLabelCounter}",
-                "0;JMP",
-
-                $"({_fileName}.IF_END_{_comparisonLabelCounter})",
-                "@SP",
-                "M=M-1"
-            };
-
-            _comparisonLabelCounter++;
-            return command;
-        }
-
-        private IList<string> ConstructBitwiseOperationCommand(string operation)
-        {
-            return new List<string> {
-                        "@SP",
-                        "A=M-1",
-                        "D=M",
-                        "A=A-1",
-                        $"M={operation}",
-                        "@SP",
-                        "M=M-1"
-                    };
-        }
-
-        private IList<string> HandleArithmeticCommand(string operationName)
-        {
-            switch (operationName)
-            {
-                case "add":
-                    {
-                        var lines = new List<string> { "//add" };
-                        lines.AddRange(ConstructBitwiseOperationCommand("D+M"));
-                        return lines;
-                    }
-                case "sub":
-                    {
-                        var lines = new List<string> { "//sub" };
-                        lines.AddRange(ConstructBitwiseOperationCommand("M-D"));
-                        return lines;
-                    }
-                case "neg":
-                    return new List<string>
-                    {
-                        "//neg",
-                        "@SP",
-                        "A=M-1",
-                        "M=-M"
-                    };
-                case "eq":
-                    {
-                        var lines = new List<string> { "//eq" };
-                        lines.AddRange(ConstructComparisonCommand("JEQ"));
-                        return lines;
-                    }
-                case "gt":
-                    {
-                        var lines = new List<string> { "//gt" };
-                        lines.AddRange(ConstructComparisonCommand("JGT"));
-                        return lines;
-                    }
-                case "lt":
-                    {
-                        var lines = new List<string> { "//lt" };
-                        lines.AddRange(ConstructComparisonCommand("JLT"));
-                        return lines;
-                    }
-                case "and":
-                    {
-                        var lines = new List<string> { "//and" };
-                        lines.AddRange(ConstructBitwiseOperationCommand("D&M"));
-                        return lines;
-                    }
-                case "or":
-                    {
-                        var lines = new List<string> { "//or" };
-                        lines.AddRange(ConstructBitwiseOperationCommand("D|M"));
-                        return lines;
-                    }
-                case "not":
-                    return new List<string>
-                    {
-                        "//not",
-                        "@SP",
-                        "A=M-1",
-                        "M=!M"
-                    };
-                default:
-                    throw new Exception("Invalid arithmetic operation");
-            }
-        }
-
-        private IList<string> HandlePushCommand(string segment, int index)
-        {
-            var memorySegment = _memorySegmentLookup[segment];
-            if (memorySegment == null) throw new Exception("Invalid memory segment");
-
-            if (index < 0 || (segment == "static" || segment == "temp" || segment == "constant" || segment == "pointer") && index > memorySegment.MaxIndex)
-            {
-                throw new Exception("Requested index out of bounds of memory segment");
-            }
-
-            if (segment == "static")
-            {
-                return new List<string>
-                {
-                    $"//push {segment} {index}",
-                    $"@{_fileName}.{index}",
-                    "D=M",
-                    "@SP",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M+1",
-                };
-            }
-            else if (segment == "temp")
-            {
-                return new List<string>
-                {
-                    $"//push {segment} {index}",
-                    $"@{index}",
-                    "D=A",
-                    $"@{memorySegment.Symbol}",
-                    "A=D+A",
-                    "D=M",
-                    "@SP",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M+1"
-                };
-            }
-            else if (segment == "constant")
-            {
-                return new List<string>
-                {
-                    $"//push {segment} {index}",
-                    $"@{index}",
-                    "D=A",
-                    "@SP",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M+1"
-                };
-            }
-            else if (segment == "pointer")
-            {
-                return new List<string>
-                {
-                    $"//push {segment} {index}",
-                    $"@{(index == 0 ? "THIS" : "THAT")}",
-                    "D=M",
-                    "@SP",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M+1"
-                };
-            }
-            else
-            {
-                return new List<string>
-                {
-                    $"//push {segment} {index}",
-                    $"@{index}",
-                    "D=A",
-                    $"@{memorySegment.Symbol}",
-                    "A=M",
-                    "A=D+A",
-                    "D=M",
-                    "@SP",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M+1"
-                };
-            }
+            return [
+                $"//push {segment} {index}",
+                .. fetchValueLines,
+                .. PushDToStack()
+            ];
         }
 
         private IList<string> HandlePopCommand(string segment, int index)
         {
             var memorySegment = _memorySegmentLookup[segment];
+            if (memorySegment == null) throw new Exception("Invalid memory segment");
 
-
-            if (index < 0 || (segment == "static" || segment == "temp" || segment == "constant" || segment == "pointer") && index > memorySegment.MaxIndex)
-            {
-                throw new Exception("Requested index out of bounds of memory segment");
-            }
-
+            if (index < 0 || index > memorySegment.MaxIndex) throw new Exception("Requested index out of bounds of memory segment");
             if (segment == "constant") throw new Exception("Cannot pop to a constant segment");
-
+            
             if (segment == "static")
             {
-                return new List<string>
-                {
+                return [
                     $"//pop {segment} {index}",
-                    "@SP",
-                    "A=M-1",
-                    "D=M",
-                    $"@{_fileName}.{index}",
-                    "M=D",
-                    "@SP",
-                    "M=M-1"
-                };
-            }
-            else if (segment == "temp")
-            {
-                return new List<string>
-                {
-                    $"//pop {segment} {index}",
-                    $"@{index}",
-                    "D=A",
-                    $"@{memorySegment.Symbol}",
-                    "D=D+A",
-                    "@temp",
-                    "M=D",
-                    "@SP",
-                    "A=M-1",
-                    "D=M",
-                    "@temp",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M-1"
-                };
-            }
-            else if (segment == "pointer")
-            {
-                return new List<string>
-                {
-                    $"//pop {segment} {index}",
-                    $"@{(index == 0 ? "THIS" : "THAT")}",
-                    "D=A",
-                    "@temp",
-                    "M=D",
-                    "@SP",
-                    "A=M-1",
-                    "D=M",
-                    "@temp",
-                    "A=M",
-                    "M=D",
-                    "@SP",
-                    "M=M-1"
-                };
+                    ..PopStackToD(),
+                    ..WriteDToLabel($"{_currentFile.FileName}.{index}")
+                ];
             }
             else
             {
-                return new List<string>
+                var saveDestinationAddressToTempVarLines = segment switch 
                 {
+                    "temp" => FetchAddress(memorySegment.Symbol, index),
+                    "pointer" => FetchAddress((index == 0 ? "THIS" : "THAT")),
+                    _ => FetchAddress(memorySegment.Symbol, index, true)
+                };
+
+                return [
                     $"//pop {segment} {index}",
-                    $"@{index}",
-                    "D=A",
-                    $"@{memorySegment.Symbol}",
-                    "A=M",
-                    "D=D+A",
-                    "@temp",
-                    "M=D",
+                    .. saveDestinationAddressToTempVarLines,
+                    .. WriteDToLabel("temp"),
+                    .. PopStackToD(),
+                    .. WriteDToLabel("temp", true)
+                ];
+            }
+        }
+
+        private IList<string> HandleStackArithmetic(string operation)
+        {
+            var header = $"//{operation}";
+            var logicLines = operation switch
+            {
+                "add" => [
+                    .. PopStackToD(),
                     "@SP",
                     "A=M-1",
-                    "D=M",
-                    "@temp",
-                    "A=M",
-                    "M=D",
+                    "M=D+M"
+                ],
+                "sub" => [
+                    .. PopStackToD(),
                     "@SP",
-                    "M=M-1"
-                };
-            }
+                    "A=M-1",
+                    "M=M-D"
+                ],
+                "neg" => [
+                    "@SP",
+                    "A=M-1",
+                    "M=-M",
+                    .. DecrementStack()
+                ],
+                "and" => [
+                    .. PopStackToD(),
+                    "@SP",
+                    "A=M-1",
+                    "M=D&M"
+                ],
+                "or" => [
+                    .. PopStackToD(),
+                    "@SP",
+                    "A=M-1",
+                    "M=D|M"
+                ],
+                "not" => [
+                    "@SP",
+                    "A=M-1",
+                    "M=!M",
+                    .. DecrementStack()
+                ],
+                "eq" => PushConditionalToStack("JEQ"),
+                "gt" => PushConditionalToStack("JGT"),
+                "lt" => PushConditionalToStack("JLT"),
+            };
+
+            if (logicLines.Count == 0) throw new Exception("Invalid arithmetic operation");
+            return [
+                header,
+                .. logicLines
+            ];
         }
 
         private string HandleLabelCommand(string label)
         {
             string labelAugmented = string.Empty;
 
-            if (_currentFuction.Trim() == string.Empty || _currentFuction == null)
+            if (_currentFunctionName.Trim() == string.Empty || _currentFunctionName == null)
             {
-                labelAugmented = $"{_fileName.ToUpper()}.{_currentFuction}${label}";
+                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{_currentFunctionName}${label}";
             }
             else
             {
-                labelAugmented = $"{_fileName.ToUpper()}.{label}";
+                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{label}";
             }
-            if (_labels.Contains(labelAugmented)) throw new Exception("Label already declared");
+            if (_declaredLabels.Contains(labelAugmented)) throw new Exception("Label already declared");
 
             return $"({labelAugmented})";
         }
@@ -414,13 +181,13 @@ namespace VMTranslator.Services
         {
             string labelAugmented = string.Empty;
 
-            if (_currentFuction.Trim() == string.Empty || _currentFuction == null)
+            if (_currentFunctionName.Trim() == string.Empty || _currentFunctionName == null)
             {
-                labelAugmented = $"{_fileName.ToUpper()}.{_currentFuction}${label}";
+                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{_currentFunctionName}${label}";
             }
             else
             {
-                labelAugmented = $"{_fileName.ToUpper()}.{label}";
+                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{label}";
             }
 
             if (commandType == CommandType.C_GOTO)
@@ -433,14 +200,11 @@ namespace VMTranslator.Services
             }
             else if (commandType == CommandType.C_IF_GOTO)
             {
-                return new List<string>
-                {
-                    "@SP",
-                    "A=M-1",
-                    "D=M",
+                return [
+                    .. PopStackToD(),
                     $"@{labelAugmented}",
                     "D;JNE"
-                };
+                ];
             }
 
             throw new Exception("Command is not a branching command");
@@ -451,10 +215,10 @@ namespace VMTranslator.Services
         {
             _functionCallRunningCount = 0;
             var outputLines = new List<string>();
-            _currentFuction = functionName;
+            _currentFunctionName = functionName;
 
             // Construct function label
-            outputLines.Add($"({_fileName.ToUpper()}.{functionName})");
+            outputLines.Add($"({_currentFile.FileName.ToUpper()}.{functionName})");
 
             // Initialise local variables
             for (int i = 0; i < nVar; i++)
@@ -477,185 +241,326 @@ namespace VMTranslator.Services
             _functionCallRunningCount++;
 
             var outputLines = new List<string>();
-            var returnLabel = $"{_fileName.ToUpper()}.${_currentFuction}$ret.${_functionCallRunningCount}";
+            var returnLabel = $"{_currentFile.FileName.ToUpper()}.${_currentFunctionName}$ret.${_functionCallRunningCount}";
 
-            // Push ReturnAddress
-            outputLines.AddRange(new List<string>
-            {
-                $"@{returnLabel}",
-                "D=A",
-                "@SP",
-                "A=M",
-                "M=D",
-                "@SP",
-                "M=M+1"
-            });
-
-
-            // Push LCL
-            outputLines.AddRange(new List<string>
-            {
-                "@LCL",
-                "D=A",
-                "@SP",
-                "A=M",
-                "M=D",
-                "@SP",
-                "M=M+1"
-            });
-
-            // Push ARG
-            outputLines.AddRange(new List<string>
-            {
-                "@ARG",
-                "D=A",
-                "@SP",
-                "A=M",
-                "M=D",
-                "@SP",
-                "M=M+1"
-            });
-
-            // Push THIS
-            outputLines.AddRange(new List<string>
-            {
-                "@THIS",
-                "D=A",
-                "@SP",
-                "A=M",
-                "M=D",
-                "@SP",
-                "M=M+1"
-            });
-
-            // Push THAT
-            outputLines.AddRange(new List<string>
-            {
-                "@THAT",
-                "D=A",
-                "@SP",
-                "A=M",
-                "M=D",
-                "@SP",
-                "M=M+1"
-            });
-
-            // Pop to ARG value SP-5-nArgs
-            outputLines.AddRange(new List<string>
-            {
+            return [
+                // Push return label of caller address to stack
+                .. FetchValue(returnLabel),
+                .. PushDToStack(),
+                // Push LCL address of caller to stack
+                .. FetchValue("LCL"),
+                .. PushDToStack(),
+                // Push ARG address of caller to stack
+                .. FetchValue("ARG"),
+                .. PushDToStack(),
+                // Push THIS address of caller to stack
+                .. FetchValue("THIS"),
+                .. PushDToStack(),
+                // Push THAT address of caller to stack
+                .. FetchValue("THAT"),
+                .. PushDToStack(),
+                // Write SP - 5 - nArgs to ARG
                 "@SP",
                 "D=A",
                 $"@{5 + nArgs}",
                 "D=D-A",
-                "@ARG",
-                "M=D"
-            });
-
-            // Pop to LCL value SP
-            outputLines.AddRange(new List<string>
-            {
+                .. WriteDToLabel("ARG"),
+                // Write SP to LCL
                 "@SP",
                 "D=A",
-                "@ARG",
-                "M=D"
-            });
-
-            // Goto functionName
-            outputLines.AddRange(HandleBranchingCommand(CommandType.C_GOTO, functionName));
-
-            // Declare Xxx.foo$ret.i
-            outputLines.Add($"({returnLabel})");
-
-            return outputLines;
+                .. WriteDToLabel("LCL"),
+                // GOTO functionName
+                .. HandleBranchingCommand(CommandType.C_GOTO, functionName),
+                // Declare return label
+                $"({returnLabel})"
+            ];
         }
 
         private IList<string> HandleReturnCommand()
         {
-            _currentFuction = string.Empty;
-            var outputLines = new List<string>();
+            _currentFunctionName = string.Empty;
 
-            // declare endFrame temp var and set to LCL
-            outputLines.AddRange(new List<string>
-            {
-                "@LCL",
-                "D=A",
-                "@endFrame",
-                "M=D"
-            });
-
-            // declare retAddr temp variable
-            // set retAddr to endFrame - 5
-            outputLines.AddRange(new List<string>
-            {
-                "@5",
-                "D=A",
-                "@endFrame",
-                "D=M-D",
-                "A=D",
-                "D=M",
-                "@retAddr",
-                "M=D"
-            });
-
-            // pop to *ARG
-            outputLines.AddRange(HandlePopCommand("arg", 0));
-
-            // set SP to ARG + 1
-            outputLines.AddRange(new List<string>
-            {
-                "@ARG",
-                "D=A",
+            return [
+                // declare endFrame temp var and set to LCL
+                .. FetchAddress("LCL"),
+                .. WriteDToLabel("endFrame"),
+                // declare retAddr temp variable and set to endFrame  - 5
+                .. FetchAddress("endFrame", -5, true),
+                .. WriteDToLabel("@retAddr"),
+                // Pop to 
+                .. HandlePopCommand("arg", 0),
+                // Set SP to ARG + 1
+                .. FetchAddress("ARG"),
                 "@SP",
-                "M=D"
-            });
+                "M=D",
+                // set THAT to *(endFrame - 1)
+                .. FetchAddress("endFrame", -1),
+                .. WriteDToLabel("THAT"),
+                // set THIS to *(endFrame - 2)
+                .. FetchAddress("endFrame", -2),
+                .. WriteDToLabel("THIS"),
+                // set ARG to *(endFrame - 3)
+                .. FetchAddress("endFrame", -3),
+                .. WriteDToLabel("ARG"),
+                // set LCL to *(endFrame - 4)
+                .. FetchAddress("endFrame", -4),
+                .. WriteDToLabel("LCL"),
+                // goto retAddr
+                "@retAddr",
+                "A=M",
+                "0;JMP"
+            ];
+        }
 
-            // set THAT to *(endFrame - 1)
-            outputLines.AddRange(new List<string>
+
+
+
+
+
+        private IList<string> FetchConstant(int value)
+        {
+            return [
+                $"@{value}",
+                "D=A"
+            ];
+        }
+
+        private IList<string> FetchAddress(string label, int offset = 0, bool dereference = false)
+        {
+            if (offset > 0)
             {
-                "@endFrame",
-                "D=A",
-                "@1",
-                "D=D-A",
-                "@THAT",
-                "M=D"
-            });
+                if (dereference)
+                {
+                    return [
+                        $"@{offset}",
+                        "D=A",
+                        $"@{label}",
+                        "D=D+M",
+                    ];
+                }
+                else
+                {
+                    return [
+                        $"@{offset}",
+                        "D=A",
+                        $"@{label}",
+                        "D=D+A",
+                    ];
+                }
 
-            // set THIS to *(endFrame - 2)
-            outputLines.AddRange(new List<string>
+            }
+            else if (offset < 0)
             {
-                "@endFrame",
-                "D=A",
-                "@2",
-                "D=D-A",
-                "@THIS",
-                "M=D"
-            });
-
-            // set ARG to *(endFrame - 3)
-            outputLines.AddRange(new List<string>
+                if (dereference)
+                {
+                    return [
+                        $"@{Math.Abs(offset)}",
+                        "D=A",
+                        $"@{label}",
+                        "D=M-D",
+                    ];
+                }
+                else
+                {
+                    return [
+                        $"@{Math.Abs(offset)}",
+                        "D=A",
+                        $"@{label}",
+                        "D=A-D",
+                    ];
+                }
+            }
+            else
             {
-                "@endFrame",
-                "D=A",
-                "@3",
-                "D=D-A",
-                "@ARG",
-                "M=D"
-            });
+                if (dereference)
+                {
+                    return [
+                        $"@{label}",
+                        "D=M",
+                    ];
+                }
+                else
+                {
+                    return [
+                        $"@{label}",
+                        "D=A",
+                    ];
+                }
+            }
+        }
 
-            // set LCL to *(endFrame - 4)
-            outputLines.AddRange(new List<string>
+        private IList<string> FetchValue(string label, int offset = 0, bool dereference = false)
+        {
+            if (offset > 0)
             {
-                "@endFrame",
-                "D=A",
-                "@4",
-                "D=D-A",
-                "@LCL",
-                "M=D"
-            });
+                if (dereference)
+                {
+                    return [
+                        $"@{offset}",
+                        "D=A",
+                        $"@{label}",
+                        "A=D+M",
+                        "D=M"
+                    ];
+                }
+                else
+                {
+                    return [
+                        $"@{offset}",
+                        "D=A",
+                        $"@{label}",
+                        "A=D+A",
+                        "D=M",
+                    ];
+                }
 
-            // goto retAddr
-            outputLines.AddRange(HandleBranchingCommand(CommandType.C_GOTO, ));
+            }
+            else if (offset < 0)
+            {
+                if (dereference)
+                {
+                    return [
+                        $"@{Math.Abs(offset)}",
+                        "D=A",
+                        $"@{label}",
+                        "A=M-D",
+                        "D=M"
+                    ];
+                }
+                else
+                {
+                    return [
+                        $"@{Math.Abs(offset)}",
+                        "D=A",
+                        $"@{label}",
+                        "D=A-D",
+                        "D=M"
+                    ];
+                }
+            }
+            else
+            {
+                if (dereference)
+                {
+                    return [
+                        $"@{label}",
+                        "A=M",
+                        "D=M"
+                    ];
+                }
+                else
+                {
+                    return [
+                        $"@{label}",
+                        "D=A",
+                    ];
+                }
+            }
+        }
 
+        private IList<string> PushDToStack()
+        {
+            return [
+                "@SP",
+                "A=M",
+                "M=D",
+                ..IncrementStack()
+            ];
+        }
+
+        private IList<string> PopStackToD()
+        {
+            return [
+                "@SP",
+                "A=M-1",
+                "D=M",
+                .. DecrementStack()
+            ];
+        }
+
+        private IList<string> WriteDToLabel(string label, bool dereference = false)
+        {
+            if (dereference)
+            {
+                return [
+                    $"@{label}",
+                    "A=M",
+                    "M=D"
+                ];
+            }
+            else
+            {
+                return [
+                    $"@{label}",
+                    "M=D"
+                ];
+            }
+        }
+
+        private IList<string> WriteLabelToD(string label, bool dereference = false)
+        {
+            if (dereference)
+            {
+                return [
+                    $"@{label}",
+                    "A=M",
+                    "D=M"
+                ];
+            }
+            else
+            {
+                return [
+                    $"@{label}",
+                    "D=M"
+                ];
+            }
+        }
+
+        private IList<string> IncrementStack()
+        {
+            return [
+                "@SP",
+                "M=M+1"
+            ];
+        }
+
+        private IList<string> DecrementStack()
+        {
+            return [
+                "@SP",
+                "M=M-1"
+            ];
+        }
+
+        private IList<string> PushConditionalToStack(string jumpCondition)
+        {
+            List<string> output = [
+                .. PopStackToD(),
+                "@SP",
+                "D=M-D",
+                $"@{_currentFile.FileName}.IF_SKIP_{_branchingLabelRunningCount}",
+                $"D;{jumpCondition}",
+
+                "@SP",
+                "A=M-1",
+                "A=A-1",
+                "M=0",
+                $"@{_currentFile.FileName}.IF_END_{_branchingLabelRunningCount}",
+                "0;JMP",
+
+                $"({_currentFile.FileName}.IF_SKIP_{_branchingLabelRunningCount})",
+                "@SP",
+                "A=M-1",
+                "A=A-1",
+                "M=-1",
+                $"@{_currentFile.FileName}.IF_END_{_branchingLabelRunningCount}",
+                "0;JMP",
+
+                $"({_currentFile.FileName}.IF_END_{_branchingLabelRunningCount})",
+            ];
+
+            _branchingLabelRunningCount++;
+            return output;
         }
     }
 }
