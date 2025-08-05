@@ -40,7 +40,7 @@ namespace VMTranslator.Services
                 {
                     CommandType.C_PUSH => HandlePushCommand(command.Arg1, command.Arg2),
                     CommandType.C_POP => HandlePopCommand(command.Arg1, command.Arg2),
-                    CommandType.C_ARITHMETIC => HandleStackArithmetic(command.Arg1)
+                    CommandType.C_ARITHMETIC => HandleArithmeticCommand(command.Arg1)
                 };
 
                 output.AddRange(lines);
@@ -58,12 +58,12 @@ namespace VMTranslator.Services
 
             var fetchValueLines = segment switch
             {
-                "static" => FetchValue($"{_currentFile.FileName}.{index}", dereference: true),
+                "static" => FetchValue($"{_currentFile.FileName}.{index}"),
                 "temp" => FetchValue(memorySegment.Symbol, index),
                 "constant" => FetchConstant(index),
                 "pointer" => FetchValue(index == 0 ? "THIS" : "THAT"),
                 _ => FetchValue(memorySegment.Symbol, index, true),
-            };;
+            };
 
             return [
                 $"//push {segment} {index}",
@@ -107,7 +107,7 @@ namespace VMTranslator.Services
             }
         }
 
-        private IList<string> HandleStackArithmetic(string operation)
+        private IList<string> HandleArithmeticCommand(string operation)
         {
             var header = $"//{operation}";
             var logicLines = operation switch
@@ -127,8 +127,7 @@ namespace VMTranslator.Services
                 "neg" => [
                     "@SP",
                     "A=M-1",
-                    "M=-M",
-                    .. DecrementStack()
+                    "M=-M"
                 ],
                 "and" => [
                     .. PopStackToD(),
@@ -145,8 +144,7 @@ namespace VMTranslator.Services
                 "not" => [
                     "@SP",
                     "A=M-1",
-                    "M=!M",
-                    .. DecrementStack()
+                    "M=!M"
                 ],
                 "eq" => PushConditionalToStack("JEQ"),
                 "gt" => PushConditionalToStack("JGT"),
@@ -452,7 +450,7 @@ namespace VMTranslator.Services
                 {
                     return [
                         $"@{label}",
-                        "D=A",
+                        "D=M",
                     ];
                 }
             }
@@ -537,13 +535,13 @@ namespace VMTranslator.Services
             List<string> output = [
                 .. PopStackToD(),
                 "@SP",
+                "A=M-1",
                 "D=M-D",
                 $"@{_currentFile.FileName}.IF_SKIP_{_branchingLabelRunningCount}",
                 $"D;{jumpCondition}",
 
                 "@SP",
                 "A=M-1",
-                "A=A-1",
                 "M=0",
                 $"@{_currentFile.FileName}.IF_END_{_branchingLabelRunningCount}",
                 "0;JMP",
@@ -551,7 +549,6 @@ namespace VMTranslator.Services
                 $"({_currentFile.FileName}.IF_SKIP_{_branchingLabelRunningCount})",
                 "@SP",
                 "A=M-1",
-                "A=A-1",
                 "M=-1",
                 $"@{_currentFile.FileName}.IF_END_{_branchingLabelRunningCount}",
                 "0;JMP",

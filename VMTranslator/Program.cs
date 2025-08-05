@@ -3,8 +3,8 @@ using VMTranslator.Services;
 
 var basePath = "C:\\Nand2Tetris\\vmFiles";
 
-var inputPath = basePath + "\\Project 7\\BasicTest";
-var outputPath = basePath + "\\Project 7\\BasicTest\\BasicTest.asm";
+var inputPath = basePath + "\\Project 7\\StackTest";
+var outputPath = basePath + "\\Project 7\\StackTest\\StackTest.asm";
 
 var parser = new Parser();
 var translator = new Translator();
