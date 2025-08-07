@@ -3,8 +3,8 @@ using VMTranslator.Services;
 
 var basePath = "C:\\Nand2Tetris\\vmFiles";
 
-var inputPath = basePath + "\\Project 7\\StackTest";
-var outputPath = basePath + "\\Project 7\\StackTest\\StackTest.asm";
+var inputPath = basePath + "\\Project 8\\FibonacciElement";
+var outputPath = basePath + "\\Project 8\\FibonacciElement\\FibonacciElement.asm";
 
 var parser = new Parser();
 var translator = new Translator();

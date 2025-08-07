@@ -40,7 +40,13 @@ namespace VMTranslator.Services
                 {
                     CommandType.C_PUSH => HandlePushCommand(command.Arg1, command.Arg2),
                     CommandType.C_POP => HandlePopCommand(command.Arg1, command.Arg2),
-                    CommandType.C_ARITHMETIC => HandleArithmeticCommand(command.Arg1)
+                    CommandType.C_ARITHMETIC => HandleArithmeticCommand(command.Arg1),
+                    CommandType.C_LABEL => HandleLabelCommand(command.Arg1),
+                    CommandType.C_GOTO => HandleBranchingCommand(CommandType.C_GOTO, command.Arg1),
+                    CommandType.C_IF_GOTO => HandleBranchingCommand(CommandType.C_IF_GOTO, command.Arg1),
+                    CommandType.C_FUNCTION => HandleFunctionCommand(command.Arg1, command.Arg2),
+                    CommandType.C_CALL => HandleCallCommand(command.Arg1, command.Arg2),
+                    CommandType.C_RETURN => HandleReturnCommand()
                 };
 
                 output.AddRange(lines);
@@ -158,7 +164,7 @@ namespace VMTranslator.Services
             ];
         }
 
-        private string HandleLabelCommand(string label)
+        private IList<string> HandleLabelCommand(string label)
         {
             string labelAugmented = string.Empty;
 
@@ -172,7 +178,9 @@ namespace VMTranslator.Services
             }
             if (_declaredLabels.Contains(labelAugmented)) throw new Exception("Label already declared");
 
-            return $"({labelAugmented})";
+            return [
+                $"({labelAugmented})"
+            ];
         }
 
         private IList<string> HandleBranchingCommand(CommandType commandType, string label)
@@ -190,11 +198,10 @@ namespace VMTranslator.Services
 
             if (commandType == CommandType.C_GOTO)
             {
-                return new List<string>
-                {
+                return [
                     $"@{labelAugmented}",
                     "0;JMP"
-                };
+                ];
             }
             else if (commandType == CommandType.C_IF_GOTO)
             {
@@ -243,29 +250,29 @@ namespace VMTranslator.Services
 
             return [
                 // Push return label of caller address to stack
-                .. FetchValue(returnLabel),
+                .. FetchAddress(returnLabel),
                 .. PushDToStack(),
                 // Push LCL address of caller to stack
-                .. FetchValue("LCL"),
+                .. FetchAddress("LCL", dereference: true),
                 .. PushDToStack(),
                 // Push ARG address of caller to stack
-                .. FetchValue("ARG"),
+                .. FetchAddress("ARG", dereference: true),
                 .. PushDToStack(),
                 // Push THIS address of caller to stack
-                .. FetchValue("THIS"),
+                .. FetchAddress("THIS", dereference: true),
                 .. PushDToStack(),
                 // Push THAT address of caller to stack
-                .. FetchValue("THAT"),
+                .. FetchAddress("THAT", dereference: true),
                 .. PushDToStack(),
                 // Write SP - 5 - nArgs to ARG
                 "@SP",
-                "D=A",
+                "D=M",
                 $"@{5 + nArgs}",
                 "D=D-A",
                 .. WriteDToLabel("ARG"),
                 // Write SP to LCL
                 "@SP",
-                "D=A",
+                "D=M",
                 .. WriteDToLabel("LCL"),
                 // GOTO functionName
                 .. HandleBranchingCommand(CommandType.C_GOTO, functionName),
@@ -280,28 +287,28 @@ namespace VMTranslator.Services
 
             return [
                 // declare endFrame temp var and set to LCL
-                .. FetchAddress("LCL"),
+                .. FetchAddress("LCL", dereference: true),
                 .. WriteDToLabel("endFrame"),
                 // declare retAddr temp variable and set to endFrame  - 5
-                .. FetchAddress("endFrame", -5, true),
-                .. WriteDToLabel("@retAddr"),
+                .. FetchValue("endFrame", -5, true),
+                .. WriteDToLabel("retAddr"),
                 // Pop to 
-                .. HandlePopCommand("arg", 0),
+                .. HandlePopCommand("argument", 0),
                 // Set SP to ARG + 1
-                .. FetchAddress("ARG"),
+                .. FetchAddress("ARG", dereference: true),
                 "@SP",
-                "M=D",
+                "M=D+1",
                 // set THAT to *(endFrame - 1)
-                .. FetchAddress("endFrame", -1),
+                .. FetchValue("endFrame", -1, true),
                 .. WriteDToLabel("THAT"),
                 // set THIS to *(endFrame - 2)
-                .. FetchAddress("endFrame", -2),
+                .. FetchValue("endFrame", -2, true),
                 .. WriteDToLabel("THIS"),
                 // set ARG to *(endFrame - 3)
-                .. FetchAddress("endFrame", -3),
+                .. FetchValue("endFrame", -3, true),
                 .. WriteDToLabel("ARG"),
                 // set LCL to *(endFrame - 4)
-                .. FetchAddress("endFrame", -4),
+                .. FetchValue("endFrame", -4, true),
                 .. WriteDToLabel("LCL"),
                 // goto retAddr
                 "@retAddr",
@@ -309,11 +316,6 @@ namespace VMTranslator.Services
                 "0;JMP"
             ];
         }
-
-
-
-
-
 
         private IList<string> FetchConstant(int value)
         {
@@ -431,7 +433,7 @@ namespace VMTranslator.Services
                         $"@{Math.Abs(offset)}",
                         "D=A",
                         $"@{label}",
-                        "D=A-D",
+                        "A=A-D",
                         "D=M"
                     ];
                 }
