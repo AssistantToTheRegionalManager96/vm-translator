@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using VMTranslator.Models;
 
 namespace VMTranslator.Services
@@ -24,7 +25,10 @@ namespace VMTranslator.Services
         };
 
         private VMFile _currentFile { get; set; }
-        private string _currentFunctionName = string.Empty;
+        private string _currentFunctionName = String.Empty;
+
+
+
         private int _functionCallRunningCount = 0;
         private int _branchingLabelRunningCount = 0;
         private HashSet<string> _declaredLabels = new HashSet<string>();
@@ -170,12 +174,13 @@ namespace VMTranslator.Services
 
             if (_currentFunctionName.Trim() == string.Empty || _currentFunctionName == null)
             {
-                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{_currentFunctionName}${label}";
+                labelAugmented = $"{_currentFile.FileName}.{label}";
             }
             else
             {
-                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{label}";
+                labelAugmented = $"{_currentFile.FileName}.{_currentFunctionName}${label}";
             }
+
             if (_declaredLabels.Contains(labelAugmented)) throw new Exception("Label already declared");
 
             return [
@@ -185,15 +190,15 @@ namespace VMTranslator.Services
 
         private IList<string> HandleBranchingCommand(CommandType commandType, string label)
         {
-            string labelAugmented = string.Empty;
+            string labelAugmented = label;
 
             if (_currentFunctionName.Trim() == string.Empty || _currentFunctionName == null)
             {
-                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{_currentFunctionName}${label}";
+                labelAugmented = $"{_currentFile.FileName}.{label}";
             }
             else
             {
-                labelAugmented = $"{_currentFile.FileName.ToUpper()}.{label}";
+                labelAugmented = $"{_currentFile.FileName}.{_currentFunctionName}${label}";
             }
 
             if (commandType == CommandType.C_GOTO)
@@ -223,7 +228,8 @@ namespace VMTranslator.Services
             _currentFunctionName = functionName;
 
             // Construct function label
-            outputLines.Add($"({_currentFile.FileName.ToUpper()}.{functionName})");
+            if (!functionName.StartsWith(_currentFile.FileName + ".")) functionName = _currentFile.FileName + "." + functionName;
+            outputLines.Add($"({functionName})");
 
             // Initialise local variables
             for (int i = 0; i < nVar; i++)
@@ -246,7 +252,7 @@ namespace VMTranslator.Services
             _functionCallRunningCount++;
 
             var outputLines = new List<string>();
-            var returnLabel = $"{_currentFile.FileName.ToUpper()}.${_currentFunctionName}$ret.${_functionCallRunningCount}";
+            var returnLabel = $"{_currentFile.FileName}.{_currentFunctionName}$ret.{_functionCallRunningCount}";
 
             return [
                 // Push return label of caller address to stack
@@ -275,7 +281,9 @@ namespace VMTranslator.Services
                 "D=M",
                 .. WriteDToLabel("LCL"),
                 // GOTO functionName
-                .. HandleBranchingCommand(CommandType.C_GOTO, functionName),
+                $"@{functionName}",
+                "0;JMP",
+                //.. HandleBranchingCommand(CommandType.C_GOTO, functionName),
                 // Declare return label
                 $"({returnLabel})"
             ];
@@ -283,8 +291,6 @@ namespace VMTranslator.Services
 
         private IList<string> HandleReturnCommand()
         {
-            _currentFunctionName = string.Empty;
-
             return [
                 // declare endFrame temp var and set to LCL
                 .. FetchAddress("LCL", dereference: true),
