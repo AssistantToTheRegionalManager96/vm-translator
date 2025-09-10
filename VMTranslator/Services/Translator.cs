@@ -56,6 +56,7 @@ namespace VMTranslator.Services
                 output.AddRange(lines);
             }
 
+            _currentFile = null;
             return output;
         }
 
@@ -79,6 +80,31 @@ namespace VMTranslator.Services
                 $"//push {segment} {index}",
                 .. fetchValueLines,
                 .. PushDToStack()
+            ];
+        }
+
+        public IList<string> GenerateBootstrapCode()
+        {
+            return [
+                "//Bootstrapping",
+                .. SetMemoryPointer("SP", 256),
+                .. SetMemoryPointer("LCL", 300),
+                .. SetMemoryPointer("ARG", 400),
+                .. SetMemoryPointer("THIS", 3000),
+                .. SetMemoryPointer("THAT", 4000),
+
+                "//Initialising Sys.init",
+                .. HandleCallCommand("Sys.init", 0)
+            ];
+        }
+
+        private IList<string> SetMemoryPointer(string pointer, int address)
+        {
+            return [
+                $"@{address}",
+                "D=A",
+                $"@{pointer}",
+                "M=D"
             ];
         }
 
@@ -258,9 +284,12 @@ namespace VMTranslator.Services
             {
                 $"call {functionName} {nArgs}"
             };
-            var returnLabel = $"{_currentFile.FileName}.{_currentFunctionName}$ret.{_functionCallRunningCount}";
+
+            var returnLabel = _currentFile != null ?
+                $"{_currentFile.FileName}.{_currentFunctionName}$ret.{_functionCallRunningCount}" : $"{_currentFunctionName}$ret.{_functionCallRunningCount}";
 
             return [
+                $"//call {functionName} {nArgs}",
                 // Push return label of caller address to stack
                 $"//push {returnLabel}",
                 .. FetchAddress(returnLabel),
@@ -312,11 +341,11 @@ namespace VMTranslator.Services
                 .. FetchAddress("LCL", dereference: true),
                 .. WriteDToLabel("endFrame"),
                 // declare retAddr temp variable and set to endFrame  - 5
-                "//retAddr",
+                "//set retAddr = *(endFrame - 5)",
                 .. FetchValue("endFrame", -5, true),
                 .. WriteDToLabel("retAddr"),
-                // Pop to 
-                "//pop argument 0",
+                // Pop to ARG
+                "//pop SP to ARG",
                 .. HandlePopCommand("argument", 0),
                 // Set SP to ARG + 1
                 "//set SP = *ARG + 1",
