@@ -211,7 +211,7 @@ namespace VMTranslator.Services
             else if (commandType == CommandType.C_IF_GOTO)
             {
                 return [
-                    .. PopStackToD(),
+                    .. PeekStackToD(),
                     $"@{labelAugmented}",
                     "D;JNE"
                 ];
@@ -224,7 +224,10 @@ namespace VMTranslator.Services
         private IList<string> HandleFunctionCommand(string functionName, int nVar)
         {
             _functionCallRunningCount = 0;
-            var outputLines = new List<string>();
+            var outputLines = new List<string>
+            {
+                $"//function {functionName} {nVar}"
+            };
             _currentFunctionName = functionName;
 
             // Construct function label
@@ -251,36 +254,47 @@ namespace VMTranslator.Services
         {
             _functionCallRunningCount++;
 
-            var outputLines = new List<string>();
+            var outputLines = new List<string>
+            {
+                $"call {functionName} {nArgs}"
+            };
             var returnLabel = $"{_currentFile.FileName}.{_currentFunctionName}$ret.{_functionCallRunningCount}";
 
             return [
                 // Push return label of caller address to stack
+                $"//push {returnLabel}",
                 .. FetchAddress(returnLabel),
                 .. PushDToStack(),
                 // Push LCL address of caller to stack
+                "//push LCL",
                 .. FetchAddress("LCL", dereference: true),
                 .. PushDToStack(),
                 // Push ARG address of caller to stack
+                "//push ARG",
                 .. FetchAddress("ARG", dereference: true),
                 .. PushDToStack(),
                 // Push THIS address of caller to stack
+                "//push THIS",
                 .. FetchAddress("THIS", dereference: true),
                 .. PushDToStack(),
                 // Push THAT address of caller to stack
+                "//push THAT",
                 .. FetchAddress("THAT", dereference: true),
                 .. PushDToStack(),
                 // Write SP - 5 - nArgs to ARG
+                "//set ARG = SP-5-nArgs",
                 "@SP",
                 "D=M",
                 $"@{5 + nArgs}",
                 "D=D-A",
                 .. WriteDToLabel("ARG"),
                 // Write SP to LCL
+                "//set LCL = SP",
                 "@SP",
                 "D=M",
                 .. WriteDToLabel("LCL"),
                 // GOTO functionName
+                $"// goto {functionName}",
                 $"@{functionName}",
                 "0;JMP",
                 //.. HandleBranchingCommand(CommandType.C_GOTO, functionName),
@@ -292,31 +306,41 @@ namespace VMTranslator.Services
         private IList<string> HandleReturnCommand()
         {
             return [
+                "//return",
                 // declare endFrame temp var and set to LCL
+                "//endFrame",
                 .. FetchAddress("LCL", dereference: true),
                 .. WriteDToLabel("endFrame"),
                 // declare retAddr temp variable and set to endFrame  - 5
+                "//retAddr",
                 .. FetchValue("endFrame", -5, true),
                 .. WriteDToLabel("retAddr"),
                 // Pop to 
+                "//pop argument 0",
                 .. HandlePopCommand("argument", 0),
                 // Set SP to ARG + 1
+                "//set SP = *ARG + 1",
                 .. FetchAddress("ARG", dereference: true),
                 "@SP",
                 "M=D+1",
                 // set THAT to *(endFrame - 1)
+                "//set that = *(endFrame - 1)",
                 .. FetchValue("endFrame", -1, true),
                 .. WriteDToLabel("THAT"),
                 // set THIS to *(endFrame - 2)
+                "//set this = *(endFrame - 2)",
                 .. FetchValue("endFrame", -2, true),
                 .. WriteDToLabel("THIS"),
                 // set ARG to *(endFrame - 3)
+                "//set argument = *(endFrame - 3)",
                 .. FetchValue("endFrame", -3, true),
                 .. WriteDToLabel("ARG"),
                 // set LCL to *(endFrame - 4)
+                "//set local = *(endFrame - 4)",
                 .. FetchValue("endFrame", -4, true),
                 .. WriteDToLabel("LCL"),
                 // goto retAddr
+                "//goto retAddr",
                 "@retAddr",
                 "A=M",
                 "0;JMP"
@@ -481,6 +505,15 @@ namespace VMTranslator.Services
                 "A=M-1",
                 "D=M",
                 .. DecrementStack()
+            ];
+        }
+
+        private IList<string> PeekStackToD()
+        {
+            return [
+                "@SP",
+                "A=M-1",
+                "D=M",
             ];
         }
 
